@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "granite dev",
+    "dev:vite": "vite dev --host localhost --port 5173",
     "build": "ait build",
     "deploy": "ait deploy",
     "lint": "eslint .",
