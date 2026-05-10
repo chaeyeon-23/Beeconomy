@@ -5,6 +5,7 @@ import {
   BottomCTA,
   Button,
   CTAButton,
+  FixedBottomCTA,
   List,
   ListRow,
   Spacing,
@@ -17,7 +18,7 @@ import {
 import { adaptive } from "@toss/tds-colors";
 import "./App.css";
 
-type Screen = "welcome" | "nickname" | "budget" | "home";
+type Screen = "welcome" | "nickname" | "budget" | "home" | "survey";
 
 const APP_ICON =
   "https://static.toss.im/appsintoss/31139/53105092-e2a9-454b-8a6e-eb7808a98977.png";
@@ -62,7 +63,8 @@ function App() {
           onNext={() => setScreen("home")}
         />
       )}
-      {screen === "home" && <HomeScreen onEditBudget={() => setScreen("budget")} />}
+      {screen === "home" && <HomeScreen onEditBudget={() => setScreen("budget")} onSurvey={() => setScreen("survey")} />}
+      {screen === "survey" && <SurveyScreen />}
     </main>
   );
 }
@@ -317,7 +319,7 @@ function BudgetScreen({
   );
 }
 
-function HomeScreen({ onEditBudget }: { onEditBudget: () => void }) {
+function HomeScreen({ onEditBudget, onSurvey }: { onEditBudget: () => void; onSurvey: () => void }) {
   const days = [
     { day: "수", date: "12", tone: "past" },
     { day: "목", date: "13", tone: "past" },
@@ -350,6 +352,45 @@ function HomeScreen({ onEditBudget }: { onEditBudget: () => void }) {
       />
 
       <Spacing size={36} />
+      <div className="home-shortcut-grid">
+        {[
+          { icon: "icon-calendar-mono", label: "캘린더", onClick: undefined },
+          { icon: "u1F913", label: "소비유형 MBTI", onClick: onSurvey },
+          { icon: "icon-review-mono", label: "꿀단지 리뷰보기", onClick: undefined },
+        ].map((item, index) => (
+          <button
+            key={item.label}
+            type="button"
+            className={`shortcut-card ${index === 0 ? 'full-width' : ''}`}
+            aria-label={item.label}
+            onClick={item.onClick}
+          >
+            {item.icon.startsWith('u1F') ? (
+              <Asset.Image
+                frameShape={Asset.frameShape.CleanW24}
+                backgroundColor="transparent"
+                src={`https://static.toss.im/2d-emojis/png/4x/${item.icon}.png`}
+                aria-hidden={true}
+                style={{ aspectRatio: '1/1' }}
+              />
+            ) : (
+              <Asset.Icon
+                frameShape={Asset.frameShape.CleanW24}
+                backgroundColor="transparent"
+                name={item.icon}
+                color={adaptive.grey700}
+                aria-hidden={true}
+                ratio="1/1"
+              />
+            )}
+            <Text color={adaptive.grey700} typography="t7" fontWeight="semibold">
+              {item.label}
+            </Text>
+          </button>
+        ))}
+      </div>
+
+      <Spacing size={31} />
       <div className="date-strip">
         {days.map(item => (
           <div className={`date-item ${item.tone}`} key={`${item.day}-${item.date}`}>
@@ -401,3 +442,32 @@ function HomeScreen({ onEditBudget }: { onEditBudget: () => void }) {
 }
 
 export default App;
+
+function SurveyScreen() {
+  return (
+    <section className="screen survey-screen">
+      <Top
+        title={
+          <Top.TitleParagraph size={22} color={adaptive.grey900}>
+            나의 소비자 유형은?
+          </Top.TitleParagraph>
+        }
+      />
+      <Spacing size={16} />
+      <Text color={adaptive.grey600} typography="t7">
+        AI가 내 취향에 딱 맞는 맛집을 추천해줘요
+      </Text>
+      <Spacing size={90} />
+      <Asset.Image
+        frameShape={Asset.frameShape.CleanW200}
+        backgroundColor="transparent"
+        src="https://static.toss.im/2d-emojis/png/4x/u1F913.png"
+        aria-hidden={true}
+        style={{ aspectRatio: '1/1' }}
+      />
+      <FixedBottomCTA.Single loading={false}>
+        나의 소비유형 확인하기
+      </FixedBottomCTA.Single>
+    </section>
+  );
+}

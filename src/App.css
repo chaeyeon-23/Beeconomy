@@ -121,6 +121,42 @@ button {
   width: 100%;
 }
 
+.home-shortcut-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
+}
+
+.shortcut-card.full-width {
+  grid-column: span 2;
+}
+
+.shortcut-card {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 88px;
+  border: 0;
+  border-radius: 18px;
+  padding: 14px 0;
+  background: var(
+    --token-tds-color-grey-opacity-50,
+    var(--adaptiveGreyOpacity50, rgba(0, 23, 51, 0.02))
+  );
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  color: inherit;
+  cursor: pointer;
+}
+
+.shortcut-card:focus-visible {
+  outline: 2px solid rgba(0, 118, 255, 0.5);
+  outline-offset: 2px;
+}
+
 .agreement-button {
   display: block;
   width: 100%;
