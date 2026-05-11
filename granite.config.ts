@@ -17,6 +17,9 @@ export default defineConfig({
       build: "vite build",
     },
   },
-  permissions: [],
+  permissions: [
+    /** 꿀단지 공유 등 — setClipboardText 사용 시 필수 */
+    { name: "clipboard", access: "write" },
+  ],
   outdir: "dist",
 });

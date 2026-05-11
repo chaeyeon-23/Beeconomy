@@ -1,4 +1,9 @@
 {
   "appName": "beeconomy",
-  "permissions": []
+  "permissions": [
+    {
+      "name": "clipboard",
+      "access": "write"
+    }
+  ]
 }

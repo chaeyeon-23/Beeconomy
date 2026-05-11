@@ -9,8 +9,24 @@ npm install
 npm run dev
 ```
 
+`npm run dev` 는 **API 서버(3001)** 와 **Granite+Vite(8081/5173)** 를 같이 띄웁니다. 웹만 켜려면 `npm run dev:web`, API만 켜려면 `npm run dev:api` 입니다.
+
 - 브라우저: [http://localhost:5173/](http://localhost:5173/)
+- 옆에 폰 프레임 데모: [http://localhost:5173/simulator-demo.html](http://localhost:5173/simulator-demo.html) (`npm run dev` 실행 중일 때)
 - Granite 개발 서버: **8081** (앱인토스 샌드박스가 여기로 붙는 경우가 많음)
+- **백엔드(API)**: [http://127.0.0.1:3001/health](http://127.0.0.1:3001/health) · `POST /api/spend-estimate` (일정 → 1인당 예상 원, 개발 시 프론트가 기본으로 호출)
+
+### 백엔드만 따로 실행
+
+```bash
+npm run dev:api
+```
+
+배포 시에는 `server/` 를 Node 호스트에 올리고, 프론트 빌드 환경 변수 `VITE_SPEND_ESTIMATE_API_URL` 에 그 API 주소를 넣으면 됩니다. URL을 넣지 않은 **프로덕션** 빌드는 API 없이 클라이언트 휴리스틱만 사용합니다.
+
+### 일정 예상 소비 · OpenAI 연동 (선택)
+
+서버 환경 변수에 **`OPENAI_API_KEY`** 를 넣으면 `POST /api/spend-estimate` 가 **OpenAI**로 1인당 예상 금액을 먼저 구하고, 오류·미응답 시 **휴리스틱**으로 돌아갑니다. 모델은 **`OPENAI_MODEL`** (기본 `gpt-4o-mini`)로 바꿀 수 있습니다. 키는 **서버에만** 두고 Git에는 올리지 마세요. `/health` 응답의 `openai: true` 이면 키가 로드된 상태입니다.
 
 ### 샌드박스에서 “로컬 서버를 찾을 수 없습니다”일 때
 

@@ -1,8 +1,4 @@
-#root {
-  width: 100%;
-  min-height: 100vh;
-  box-sizing: border-box;
-}
+/* #root sizing: see index.css (100dvh + desktop flex) */
 
 button {
   font: inherit;
@@ -25,6 +21,13 @@ button {
   height: 44px;
   padding: 0 4px 0 0;
   background: var(--token-tds-color-white, var(--adaptiveBackground, #ffffff));
+}
+
+/** 웰컴 등 뒤로 갈 곳 없을 때 헤더 정렬용(뒤로 버튼 자리만 유지) */
+.app-header-back-placeholder {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
 }
 
 .icon-button,
@@ -129,6 +132,39 @@ button {
   padding-top: 36px;
 }
 
+.home-category-stats {
+  width: 100%;
+  max-width: 400px;
+  margin: 0 auto;
+  padding: 0 24px;
+  box-sizing: border-box;
+  text-align: left;
+}
+
+.home-category-stats__list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.home-category-stats__row-head {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.home-category-stats__row-head > *:first-child {
+  flex-shrink: 0;
+}
+
+.home-category-stats__row-head > *:last-child {
+  text-align: right;
+  min-width: 0;
+}
+
 .honey-challenge-screen {
   display: flex;
   flex-direction: column;
@@ -201,8 +237,8 @@ button {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   column-gap: 4px;
-  align-items: center;
-  justify-items: center;
+  align-items: stretch;
+  justify-items: stretch;
 }
 
 .calendar-weekdays {
@@ -214,23 +250,114 @@ button {
   width: 100%;
 }
 
+/* 메인 캘린더·날짜 선택 격자 공통: 칸 너비 동일, 숫자 세로 기준 통일 */
 .calendar-day {
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 2px;
   width: 100%;
-  max-width: 40px;
-  min-height: 40px;
-  margin: 0 auto;
+  max-width: none;
+  min-height: 52px;
+  margin: 0;
   box-sizing: border-box;
   border: 0;
-  padding: 0;
+  padding: 4px 2px 2px;
   background: transparent;
   font: inherit;
   -webkit-tap-highlight-color: transparent;
 }
 
-.calendar-day--out {
+/** 멀티데이 형광펜 자리(없어도 높이 유지 → 숫자 줄 맞춤) */
+.calendar-day-range-slot {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 2px;
+  width: 100%;
+  min-height: 22px;
+  padding: 0 1px;
+  box-sizing: border-box;
+}
+
+.calendar-day-range-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+}
+
+.calendar-day-range-seg {
+  display: block;
+  height: 4px;
+  border-radius: 3px;
+  box-sizing: border-box;
+}
+
+.calendar-day-range-seg--cap-left {
+  border-top-left-radius: 5px;
+  border-bottom-left-radius: 5px;
+}
+
+.calendar-day-range-seg--cap-right {
+  border-top-right-radius: 5px;
+  border-bottom-right-radius: 5px;
+}
+
+.calendar-day-range-seg--extend-left {
+  margin-left: -3px;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+.calendar-day-range-seg--extend-right {
+  margin-right: -3px;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.calendar-day-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+}
+
+.calendar-day-markers {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-height: 14px;
+  width: 100%;
+}
+
+.calendar-spend-record-card__emoji {
+  flex-shrink: 0;
+  line-height: 0;
+  align-self: flex-start;
+  padding-top: 1px;
+}
+
+.calendar-day-dot--event {
+  flex-shrink: 0;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--token-tds-color-blue-500, #3182f6);
+}
+
+.calendar-day--out,
+.calendar-day--muted {
   pointer-events: none;
 }
 
@@ -248,20 +375,62 @@ button {
   background: var(--token-tds-color-grey-200, var(--adaptiveGrey200));
 }
 
-.calendar-day--has-events {
-  position: relative;
+.calendar-spend-records {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
 }
 
-.calendar-day--has-events::after {
-  content: "";
-  position: absolute;
-  bottom: 2px;
-  left: 50%;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  transform: translateX(-50%);
-  background: var(--token-tds-color-blue-500, #3182f6);
+.calendar-spend-record-card {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: var(--token-tds-color-grey-50, var(--adaptiveGrey50, #f9fafb));
+  border: 1px solid var(--token-tds-color-grey-opacity-100, rgba(0, 27, 55, 0.05));
+  box-sizing: border-box;
+}
+
+.calendar-spend-record-card__main {
+  flex: 1;
+  min-width: 0;
+}
+
+.calendar-spend-record-card__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.calendar-spend-record-card__btn {
+  padding: 6px 12px;
+  border-radius: 10px;
+  border: 0;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--token-tds-color-grey-opacity-100, rgba(0, 27, 55, 0.06));
+  color: var(--token-tds-color-grey-800, var(--adaptiveGrey800, #333d4b));
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.calendar-spend-record-card__btn--danger {
+  color: var(--token-tds-color-red-500, #f04452);
+  background: var(--token-tds-color-red-opacity-50, rgba(240, 68, 82, 0.08));
+}
+
+.calendar-spend-edit-summary {
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: var(--token-tds-color-grey-opacity-50, rgba(0, 23, 51, 0.02));
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .calendar-day-events-block {
@@ -328,24 +497,24 @@ button {
   transform: scaleX(-1);
 }
 
-.calendar-day--muted {
-  pointer-events: none;
-}
-
 .calendar-day-btn {
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 2px;
   width: 100%;
-  max-width: 40px;
-  min-height: 40px;
-  margin: 0 auto;
-  padding: 0;
+  max-width: none;
+  min-height: 52px;
+  margin: 0;
+  padding: 4px 2px 2px;
   border: 0;
   background: transparent;
   cursor: pointer;
   border-radius: 24px;
   font: inherit;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .calendar-day-btn:focus-visible {
