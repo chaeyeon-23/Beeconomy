@@ -27,7 +27,7 @@ console.log(`
    npm run dev
 
    → Granite가 http://0.0.0.0:8081 에 떠야 하고,
-     그 다음에 Vite가 5173에서 떠야 합니다.
+     그 다음에 Vite가 5183에서 떠야 합니다.
    → "vite만" 따로 켜면( npm run dev:vite 만) 8081이 없어서 샌드박스가 못 찹니다.
 
 ② 맥과 아이폰이 같은 Wi-Fi (게스트 Wi-Fi는 기기끼리 막혀 있으면 실패할 수 있음)
@@ -53,5 +53,5 @@ if (ips.length === 0) {
 
 console.log(`⑥ Android 실기기는 USB + adb reverse 가 필요할 수 있어요:
    adb reverse tcp:8081 tcp:8081
-   adb reverse tcp:5173 tcp:5173
+   adb reverse tcp:5183 tcp:5183
 `);

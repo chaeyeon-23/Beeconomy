@@ -91,6 +91,25 @@ button {
   padding-bottom: 32px;
 }
 
+.welcome-screen-mascot {
+  padding: 0;
+  box-sizing: border-box;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.welcome-screen-mascot__img {
+  display: block;
+  width: min(calc(100vw - 16px), 600px);
+  max-width: 100%;
+  height: auto;
+  object-fit: contain;
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
 .emoji-row {
   display: flex;
   justify-content: center;
@@ -530,6 +549,11 @@ button {
   background: var(--adaptiveGrey800, #333d4b);
 }
 
+.calendar-day-btn--range-fill {
+  background: var(--token-tds-color-grey-opacity-100, rgba(0, 23, 51, 0.08));
+  border-radius: 12px;
+}
+
 .event-estimate-screen {
   display: flex;
   flex-direction: column;
@@ -790,6 +814,17 @@ button {
   opacity: 0.92;
 }
 
+.survey-quiz-option--pressed {
+  background: rgba(253, 214, 60, 0.22) !important;
+  box-shadow: inset 0 0 0 1px rgba(253, 214, 60, 0.45);
+  opacity: 1;
+}
+
+.survey-quiz-option:disabled:not(.survey-quiz-option--pressed) {
+  opacity: 0.55;
+  cursor: default;
+}
+
 .survey-quiz-option:focus-visible {
   outline: 2px solid rgba(0, 118, 255, 0.45);
   outline-offset: 2px;
@@ -966,6 +1001,86 @@ button {
 .list-panel {
   display: flex;
   flex-direction: column;
+}
+
+/* 일정 추가 — 시간 스크롤 휠 */
+.time-wheel-picker {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  max-width: 320px;
+  margin: 0 auto;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.time-wheel-highlight {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 40px;
+  margin-top: -20px;
+  border-radius: 10px;
+  background: var(--adaptiveGrey100, #f2f4f6);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.time-wheel-col {
+  flex: 1;
+  min-width: 0;
+  max-width: 96px;
+  position: relative;
+  z-index: 1;
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    #000 18%,
+    #000 82%,
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    #000 18%,
+    #000 82%,
+    transparent 100%
+  );
+}
+
+.time-wheel-scroll {
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scroll-snap-type: y mandatory;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.time-wheel-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.time-wheel-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  scroll-snap-align: center;
+  scroll-snap-stop: always;
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--adaptiveGrey400, #adb5bd);
+  box-sizing: border-box;
+}
+
+.time-wheel-item--selected {
+  color: var(--adaptiveGrey800, #333d4b);
+  font-weight: 700;
 }
 
 @media (min-width: 481px) {

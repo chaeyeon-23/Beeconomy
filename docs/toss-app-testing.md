@@ -64,7 +64,7 @@ intoss-private://appsintoss?_deploymentId=...
 
 | 구분 | 샌드박스 + 로컬 |
 |------|-----------------|
-| 실행 | `npm run dev` (Granite **8081** + Vite **5173**) |
+| 실행 | `npm run dev` (Granite **8081** + Vite **5183**) |
 | 연결 | 앱인토스 샌드박스 앱에서 맥 IP 등 설정 ([개발 서버 연결](https://developers-apps-in-toss.toss.im/development/local-server.html)) |
 | 안내 | `npm run dev:help` |
 

@@ -11,9 +11,9 @@ export default defineConfig({
   web: {
     // 실기기 샌드박스는 Mac의 LAN IP로 접속하므로, 127.0.0.1 전용 바인딩이면 연결 실패함
     host: "0.0.0.0",
-    port: 5173,
+    port: 5183,
     commands: {
-      dev: "vite dev --host 0.0.0.0 --port 5173 --strictPort",
+      dev: "vite dev --host 0.0.0.0 --port 5183 --strictPort",
       build: "vite build",
     },
   },

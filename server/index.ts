@@ -85,12 +85,14 @@ app.post("/api/spend-estimate", async (req, res) => {
   const people = headcountPeopleFromLabel(input.headcountLabel);
   let perPerson = estimateSpendHeuristic(input);
   let source: "openai" | "heuristic" = "heuristic";
+  let breakdown: Record<string, unknown> | undefined;
 
   try {
     const ai = await estimateSpendWithOpenAI(input);
-    if (ai != null && Number.isFinite(ai)) {
-      perPerson = ai;
+    if (ai != null && Number.isFinite(ai.estimatedWonPerPerson)) {
+      perPerson = ai.estimatedWonPerPerson;
       source = "openai";
+      breakdown = ai.breakdown as unknown as Record<string, unknown>;
     }
   } catch (e) {
     console.warn("[api/spend-estimate] OpenAI error, using heuristic:", e);
@@ -101,6 +103,7 @@ app.post("/api/spend-estimate", async (req, res) => {
     estimatedUnit: "per_person",
     headcountPeople: people,
     source,
+    ...(breakdown ? { spendBreakdown: breakdown } : {}),
   });
 });
 

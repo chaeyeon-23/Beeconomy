@@ -23,7 +23,10 @@ import {
 } from "@toss/tds-mobile";
 import { adaptive } from "@toss/tds-colors";
 import { setClipboardText, SetClipboardTextPermissionError } from "@apps-in-toss/web-framework";
-import { headcountPeopleFromLabel, resolveSpendEstimate } from "./spendEstimate";
+import { resolveSpendEstimate } from "./spendEstimate";
+import { TimeWheelPicker } from "./TimeWheelPicker";
+/** 가입 전 웰컴 화면(「일침이와 함께…」) 전용 — 가입 후 메인 홈은 이모지 유지 */
+import welcomeIllimiPng from "./assets/일침이.png";
 import "./App.css";
 
 const NICKNAME_STORAGE_KEY = "bikonomy_nickname";
@@ -407,7 +410,10 @@ function newSpendEntryId(): string {
 
 const SIREN_LOTTIE_SRC = "https://static.toss.im/lotties-common/siren-2-spot.json";
 
-/** AI 1인당 예상 × 인원(추정) = 이번 일정 예상 총액 */
+/**
+ * 칭찬·경보·초과 알림에 쓰는 예산 상한 — **항상 1인 기준**.
+ * 소비 입력 금액(amountWon)도 「내가(1인이) 쓴 금액」으로 저장되므로, 예상 총액(×인원)과 비교하면 오판함.
+ */
 function estimatedBudgetWonForEvent(ev: CalendarEventRecord): number | null {
   if (ev.excludeFromSpendTracking) {
     return null;
@@ -418,12 +424,16 @@ function estimatedBudgetWonForEvent(ev: CalendarEventRecord): number | null {
   if (ev.estimatedWonPerPerson == null || !Number.isFinite(ev.estimatedWonPerPerson)) {
     return null;
   }
-  const people = Math.max(1, headcountPeopleFromLabel(ev.headcountLabel));
-  return Math.round(ev.estimatedWonPerPerson * people);
+  return Math.round(ev.estimatedWonPerPerson);
 }
 
 function totalSpentWonForEvent(eventId: string, entries: SpendEntryRecord[]): number {
-  return entries.filter(e => e.eventId === eventId).reduce((sum, e) => sum + e.amountWon, 0);
+  return entries
+    .filter(e => e.eventId === eventId)
+    .reduce((sum, e) => {
+      const a = Number(e.amountWon);
+      return sum + (Number.isFinite(a) ? a : 0);
+    }, 0);
 }
 
 /** 같은 초과 상태(항목·예산·총 소비)로는 캘린더 들어올 때 경고를 반복하지 않음 */
@@ -600,7 +610,7 @@ function collectSpendPickerSlots(
     }
     const freq = calendarEventRecurrence(ev);
     if (freq === "none") {
-      if (!isCalendarEventPastForSpend(ev, now)) {
+      if (!isCalendarEventEligibleForSpend(ev, now)) {
         continue;
       }
       if (eventHasSpendEntry(ev.id, entries, null)) {
@@ -614,14 +624,18 @@ function collectSpendPickerSlots(
       continue;
     }
     const anchorDay = ev.day;
+    const occTp = parseTimePartsFromLabel(ev.timeLabel);
+    const occH = occTp?.hour ?? 0;
+    const occMin = occTp?.minute ?? 0;
     let cy = ev.year;
     let cm = ev.monthIndex;
     let cd = ev.day;
     for (let i = 0; i < 500; i++) {
-      const endOcc = new Date(cy, cm, cd, 23, 59, 59, 999).getTime();
-      if (endOcc > nowTs) {
+      const startOcc = new Date(cy, cm, cd, occH, occMin, 0, 0).getTime();
+      if (startOcc > nowTs) {
         break;
       }
+      const endOcc = new Date(cy, cm, cd, 23, 59, 59, 999).getTime();
       const occ = spendOccYmdFromParts(cy, cm, cd);
       if (!eventHasSpendEntry(ev.id, entries, occ)) {
         slots.push({ eventId: ev.id, occurrenceYmd: occ, sortTs: endOcc });
@@ -922,7 +936,6 @@ function writeStoredSurveyResultPath(path: string | null) {
 
 const APP_ICON =
   "https://static.toss.im/appsintoss/31139/53105092-e2a9-454b-8a6e-eb7808a98977.png";
-const BEE_EMOJI = "https://static.toss.im/2d-emojis/png/4x/u1F41D.png";
 const HAND_EMOJI = "https://static.toss.im/2d-emojis/png/4x/u1F590_u1F3FC.png";
 const HONEY_EMOJI = "https://static.toss.im/2d-emojis/png/4x/u1F36F.png";
 const SURVEY_LOADING_COIN = "https://static.toss.im/3d/coin-dollar-apng.png";
@@ -979,14 +992,47 @@ function calendarEventEndYmd(ev: CalendarEventRecord): { y: number; m: number; d
   return { y: ev.year, m: ev.monthIndex, d: ev.day };
 }
 
-/** 마지막 일정일 로컬 23:59:59.999 — 이 시각이 지나면 소비 입력에서 「지난 일정」으로 간주 */
+/** 마지막 일정일 로컬 23:59:59.999 — 목록 정렬 등에 사용 */
 function calendarEventLastDayEndTs(ev: CalendarEventRecord): number {
   const { y, m, d } = calendarEventEndYmd(ev);
   return new Date(y, m, d, 23, 59, 59, 999).getTime();
 }
 
-function isCalendarEventPastForSpend(ev: CalendarEventRecord, now: Date): boolean {
-  return calendarEventLastDayEndTs(ev) < now.getTime();
+/** timeLabel에서 시·분 추출. 없거나 파싱 실패 시 null → 소비 입력 기준은 해당일 0시 */
+function parseTimePartsFromLabel(label: string): { hour: number; minute: number } | null {
+  const t = label.trim();
+  if (!t) {
+    return null;
+  }
+  const hm = t.match(/(\d{1,2})\s*:\s*(\d{2})/);
+  if (hm) {
+    const hour = parseInt(hm[1], 10);
+    const minute = parseInt(hm[2], 10);
+    if (hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59) {
+      return { hour, minute };
+    }
+  }
+  const hk = t.match(/(\d{1,2})\s*시(?:\s*(\d{1,2})\s*분)?/);
+  if (hk) {
+    const hour = parseInt(hk[1], 10);
+    const minute = hk[2] ? parseInt(hk[2], 10) : 0;
+    if (hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59) {
+      return { hour, minute };
+    }
+  }
+  return null;
+}
+
+/** 소비를 남길 수 있는 시각(로컬): 시작일 + timeLabel 시각(없으면 0시) */
+function calendarEventSpendEligibleFromTs(ev: CalendarEventRecord): number {
+  const tp = parseTimePartsFromLabel(ev.timeLabel);
+  const h = tp?.hour ?? 0;
+  const min = tp?.minute ?? 0;
+  return new Date(ev.year, ev.monthIndex, ev.day, h, min, 0, 0).getTime();
+}
+
+function isCalendarEventEligibleForSpend(ev: CalendarEventRecord, now: Date): boolean {
+  return now.getTime() >= calendarEventSpendEligibleFromTs(ev);
 }
 
 function calendarEventRecurrence(ev: CalendarEventRecord): RecurrenceFrequency {
@@ -1027,6 +1073,34 @@ function calendarEventIsMultiDay(ev: CalendarEventRecord): boolean {
     return false;
   }
   return calendarEventEndInclusiveStartTs(ev) > calendarEventStartOfDayTs(ev);
+}
+
+/** pickDate 달력에서 고른 연·월·일 (월은 0-based) */
+type PickYmd = { y: number; m: number; d: number };
+
+function pickYmdTs(a: PickYmd): number {
+  return new Date(a.y, a.m, a.d).getTime();
+}
+
+function samePickYmd(a: PickYmd, b: PickYmd): boolean {
+  return a.y === b.y && a.m === b.m && a.d === b.d;
+}
+
+function orderPickYmd(a: PickYmd, b: PickYmd): { lo: PickYmd; hi: PickYmd } {
+  return pickYmdTs(a) <= pickYmdTs(b) ? { lo: a, hi: b } : { lo: b, hi: a };
+}
+
+function formatPickDateSelectionLine(start: PickYmd, end: PickYmd | null): string {
+  if (end == null || samePickYmd(start, end)) {
+    return `${start.y}년 ${start.m + 1}월 ${start.d}일 · 하루 일정`;
+  }
+  if (start.y === end.y && start.m === end.m) {
+    return `${start.y}년 ${start.m + 1}월 ${start.d}일 – ${end.d}일 · 기간 일정`;
+  }
+  if (start.y === end.y) {
+    return `${start.y}년 ${start.m + 1}월 ${start.d}일 – ${end.m + 1}월 ${end.d}일 · 기간 일정`;
+  }
+  return `${start.y}년 ${start.m + 1}월 ${start.d}일 – ${end.y}년 ${end.m + 1}월 ${end.d}일 · 기간 일정`;
 }
 
 function eventOverlapsCalendarMonth(ev: CalendarEventRecord, y: number, m: number): boolean {
@@ -1190,7 +1264,7 @@ function findNextCalendarEventFromToday(
   return ongoingOrFuture[0];
 }
 
-/** 홈 '다가올 항목은?': 날짜·제목·시간만 표시 (인원·예상 금액 제외) */
+/** 홈 '다가올 일정은?': 날짜·제목·시간만 표시 (인원·예상 금액 제외) */
 function formatHomeNextEventSubtitle(ev: CalendarEventRecord): string {
   const t = ev.timeLabel.trim();
   return t ? t : "세부 정보 없음";
@@ -1258,6 +1332,8 @@ function App() {
   const [calendarEvents, setCalendarEvents] = useState<CalendarEventRecord[]>(() =>
     readStoredCalendarEvents(),
   );
+  const calendarEventsRef = useRef(calendarEvents);
+  calendarEventsRef.current = calendarEvents;
   const [spendEntries, setSpendEntries] = useState<SpendEntryRecord[]>(() => readStoredSpendEntries());
   const [honeyJarIndex, setHoneyJarIndex] = useState(() => readStoredHoneyJarIndex());
   /** 일정 추가 시 날짜 선택(pickDate)을 거쳐 addEvent로 왔으면 true — 헤더 뒤로 시 pickDate로 복귀 */
@@ -1418,7 +1494,8 @@ function App() {
     setCalendarMode("addEvent");
   }, [spendAlertEventId, calendarMode, calendarEvents, spendEntries]);
 
-  useEffect(() => {
+  /** 알림이 뜬 직후·같은 틱에 꿀단지 반영(페인트 전). useEffect만 쓰면 상태 경합으로 갱신이 빠질 수 있음 */
+  useLayoutEffect(() => {
     if (screen !== "calendar") {
       return;
     }
@@ -1437,13 +1514,16 @@ function App() {
       return;
     }
     const spent = totalSpentWonForEvent(spendAlertEventId, spendEntries);
+    const actuallyOver = spent > cap;
+    if (calendarMode === "spendPraiseAlert" && actuallyOver) {
+      setCalendarMode("spendOverAlert");
+      return;
+    }
+    if (calendarMode === "spendOverAlert" && !actuallyOver) {
+      setCalendarMode("spendPraiseAlert");
+      return;
+    }
     const isOver = calendarMode === "spendOverAlert";
-    if (isOver && spent <= cap) {
-      return;
-    }
-    if (!isOver && spent > cap) {
-      return;
-    }
     const c = Math.round(cap);
     const s = Math.round(spent);
     const key = `${isOver ? "o" : "p"}|${spendAlertEventId}|${c}|${s}`;
@@ -1589,6 +1669,7 @@ function App() {
           monthlyBudgetWon={monthlyBudgetWon}
           calendarEvents={calendarEvents}
           spendEntries={spendEntries}
+          honeyJarIndex={honeyJarIndex}
           spendAlertEventId={spendAlertEventId}
           openSpendEntryFromHome={openSpendEntryFromHome}
           onConsumeOpenSpendEntryFromHome={consumeSpendEntryFromHome}
@@ -1606,22 +1687,42 @@ function App() {
           onAddSpendEntry={entry => {
             setSpendEntries(prev => {
               const next = [...prev, entry];
-              const ev = calendarEvents.find(e => e.id === entry.eventId);
+              const ev = calendarEventsRef.current.find(e => e.id === entry.eventId);
               const cap = ev ? estimatedBudgetWonForEvent(ev) : null;
               if (ev && cap != null && cap > 0) {
                 const spent = totalSpentWonForEvent(entry.eventId, next);
                 const isOver = spent > cap;
-                window.setTimeout(() => {
+                queueMicrotask(() => {
                   setSpendAlertEventId(entry.eventId);
                   setCalendarMode(isOver ? "spendOverAlert" : "spendPraiseAlert");
-                }, 0);
+                });
               }
               return next;
             });
           }}
-          onUpdateSpendEntry={entry =>
-            setSpendEntries(prev => prev.map(e => (e.id === entry.id ? entry : e)))
-          }
+          onUpdateSpendEntry={entry => {
+            setSpendEntries(prev => {
+              const prevEntry = prev.find(e => e.id === entry.id);
+              const next = prev.map(e => (e.id === entry.id ? entry : e));
+              const amountChanged =
+                prevEntry == null ||
+                prevEntry.amountWon !== entry.amountWon ||
+                prevEntry.eventId !== entry.eventId;
+              if (amountChanged) {
+                const ev = calendarEventsRef.current.find(e => e.id === entry.eventId);
+                const cap = ev ? estimatedBudgetWonForEvent(ev) : null;
+                if (ev && cap != null && cap > 0) {
+                  const spent = totalSpentWonForEvent(entry.eventId, next);
+                  const isOver = spent > cap;
+                  queueMicrotask(() => {
+                    setSpendAlertEventId(entry.eventId);
+                    setCalendarMode(isOver ? "spendOverAlert" : "spendPraiseAlert");
+                  });
+                }
+              }
+              return next;
+            });
+          }}
           onDeleteSpendEntry={id => setSpendEntries(prev => prev.filter(e => e.id !== id))}
         />
       )}
@@ -1749,17 +1850,18 @@ function WelcomeScreen({
         }
       />
 
-      <Spacing size={84} />
-      <div className="emoji-row">
-        <Asset.Image
-          frameShape={Asset.frameShape.CleanW100}
-          backgroundColor="transparent"
-          src={BEE_EMOJI}
+      <Spacing size={20} />
+      <div className="emoji-row welcome-screen-mascot">
+        <img
+          className="welcome-screen-mascot__img"
+          src={welcomeIllimiPng}
+          alt=""
+          decoding="async"
+          draggable={false}
           aria-hidden={true}
-          style={{ aspectRatio: "1/1" }}
         />
       </div>
-      <Spacing size={30} />
+      <Spacing size={20} />
 
       <div className="stepper-panel">
         <StepperRow
@@ -1768,7 +1870,7 @@ function WelcomeScreen({
         />
         <StepperRow
           left={<StepperRow.NumberIcon number={2} />}
-          center={<StepperRow.Texts type="A" title="캘린더 항목과 소비를 입력하면" description="" />}
+          center={<StepperRow.Texts type="A" title="일정과 소비를 입력하면" description="" />}
         />
         <StepperRow
           left={<StepperRow.NumberIcon number={3} />}
@@ -2073,12 +2175,12 @@ function HomeScreen({
           contents={
             <ListRow.Texts
               type="2RowTypeD"
-              top="다가올 항목은?"
+              top="다가올 일정은?"
               topProps={{ color: adaptive.grey600 }}
               bottom={
                 nextCalendarEvent
                   ? formatHomeNextEventDetail(nextCalendarEvent)
-                  : "캘린더에 항목을 추가해 보세요"
+                  : "캘린더에 일정을 추가해 보세요"
               }
               bottomProps={
                 nextCalendarEvent
@@ -2505,6 +2607,7 @@ function CalendarScreen({
   monthlyBudgetWon,
   calendarEvents,
   spendEntries,
+  honeyJarIndex,
   spendAlertEventId,
   openSpendEntryFromHome,
   onConsumeOpenSpendEntryFromHome,
@@ -2523,6 +2626,7 @@ function CalendarScreen({
   monthlyBudgetWon: number | null;
   calendarEvents: CalendarEventRecord[];
   spendEntries: SpendEntryRecord[];
+  honeyJarIndex: number;
   spendAlertEventId: string | null;
   openSpendEntryFromHome: boolean;
   onConsumeOpenSpendEntryFromHome: () => void;
@@ -2561,7 +2665,6 @@ function CalendarScreen({
   const [eventEndYear, setEventEndYear] = useState(() => today.getFullYear());
   const [eventEndMonth, setEventEndMonth] = useState(() => today.getMonth());
   const [eventEndDay, setEventEndDay] = useState(() => today.getDate());
-  const [datePickRole, setDatePickRole] = useState<"start" | "end">("start");
   /** 일정 추가: 0날짜 →1제목 →2시간 →3인원 →4예상카테고리 →5반복·소비제외 */
   const [scheduleWizardStep, setScheduleWizardStep] = useState(0);
   const [eventRecurrence, setEventRecurrence] = useState<RecurrenceFrequency>("none");
@@ -2580,7 +2683,11 @@ function CalendarScreen({
 
   const [pickDateYear, setPickDateYear] = useState(() => today.getFullYear());
   const [pickDateMonth, setPickDateMonth] = useState(() => today.getMonth());
-  const [pickDateDay, setPickDateDay] = useState(() => today.getDate());
+  /** 첫 탭 = 하루, 다른 날 한 번 더 탭 = 시작~끝 기간. 기간 잡힌 뒤 탭하면 그날로 다시 시작 */
+  const [pickRange, setPickRange] = useState<{ start: PickYmd | null; end: PickYmd | null }>({
+    start: null,
+    end: null,
+  });
 
   const cells = useMemo(
     () => buildMonthGrid(viewYear, viewMonth, today),
@@ -2590,6 +2697,24 @@ function CalendarScreen({
     () => buildMonthGrid(pickDateYear, pickDateMonth, today),
     [pickDateYear, pickDateMonth, today],
   );
+  const pickDateCanContinue = useMemo(() => pickRange.start != null, [pickRange.start]);
+
+  const onPickDateYmdTap = useCallback((ymd: PickYmd) => {
+    setPickRange(prev => {
+      if (prev.start == null) {
+        return { start: ymd, end: null };
+      }
+      if (prev.end == null) {
+        if (samePickYmd(prev.start, ymd)) {
+          return prev;
+        }
+        const { lo, hi } = orderPickYmd(prev.start, ymd);
+        return { start: lo, end: hi };
+      }
+      return { start: ymd, end: null };
+    });
+  }, []);
+
   const weekdays = KOREAN_WEEKDAY_SHORT;
 
   useEffect(() => {
@@ -2656,6 +2781,23 @@ function CalendarScreen({
     eventEndDay,
     eventTitle,
   ]);
+
+  /** 신규 일정: 시간 단계에 처음 들어오면 비어 있을 때 현재 시각으로 채움 (휠과 동기) */
+  useEffect(() => {
+    if (scheduleWizardStep !== 2) {
+      return;
+    }
+    if (eventTime.trim() !== "") {
+      return;
+    }
+    if (editingCalendarEventId != null) {
+      return;
+    }
+    const d = new Date();
+    setEventTime(`${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`);
+  }, [scheduleWizardStep, eventTime, editingCalendarEventId]);
+
+  const scheduleStep2TimeParts = useMemo(() => parseTimePartsFromLabel(eventTime), [eventTime]);
 
   const eventDaysInViewMonth = useMemo(() => {
     const days = new Set<number>();
@@ -2736,7 +2878,7 @@ function CalendarScreen({
     };
   }, [monthEventsSorted, today]);
 
-  /** 소비 입력: 끝난 일정(또는 반복 회차)마다 슬롯. 수정 중이면 해당 슬롯을 목록 앞에 붙임 */
+  /** 소비 입력: 시작 시각이 지난 일정(또는 반복 회차)마다 슬롯. 수정 중이면 해당 슬롯을 목록 앞에 붙임 */
   const spendPickerSlots = useMemo(() => {
     void (mode === "addEvent" && chipTab === "spend");
     const now = new Date();
@@ -3038,13 +3180,9 @@ function CalendarScreen({
     setEditingCalendarEventId(null);
     setEditingSpendEntryId(null);
     spendPrefillTokenRef.current = null;
-    setDatePickRole("start");
     setPickDateYear(viewYear);
     setPickDateMonth(viewMonth);
-    const sameAsToday =
-      viewYear === today.getFullYear() && viewMonth === today.getMonth();
-    const initialDay = sameAsToday ? today.getDate() : 1;
-    setPickDateDay(clampDayToMonth(viewYear, viewMonth, initialDay));
+    setPickRange({ start: null, end: null });
     setEventTitle("");
     setEventTime("");
     setEventHeadcount("");
@@ -3063,7 +3201,6 @@ function CalendarScreen({
     const m = d.getMonth();
     setPickDateYear(y);
     setPickDateMonth(m);
-    setPickDateDay(d => clampDayToMonth(y, m, d));
   };
 
   const goPickNextMonth = () => {
@@ -3072,36 +3209,58 @@ function CalendarScreen({
     const m = d.getMonth();
     setPickDateYear(y);
     setPickDateMonth(m);
-    setPickDateDay(d => clampDayToMonth(y, m, d));
   };
 
   const confirmPickDateAndContinue = () => {
-    if (datePickRole === "start") {
-      setEventYear(pickDateYear);
-      setEventMonth(pickDateMonth);
-      setEventDay(pickDateDay);
-    } else {
-      setEventEndYear(pickDateYear);
-      setEventEndMonth(pickDateMonth);
-      setEventEndDay(pickDateDay);
+    const lo = pickRange.start;
+    if (lo == null) {
+      return;
     }
+    const hi = pickRange.end != null && !samePickYmd(lo, pickRange.end) ? pickRange.end : lo;
+    setEventYear(lo.y);
+    setEventMonth(lo.m);
+    setEventDay(lo.d);
+    setEventEndYear(hi.y);
+    setEventEndMonth(hi.m);
+    setEventEndDay(hi.d);
+    setScheduleWizardStep(1);
     onEnterAddEventFromPickDate();
     onModeChange("addEvent");
   };
 
   const reopenPickDateFromForm = () => {
-    setDatePickRole("start");
+    const sy: PickYmd = { y: eventYear, m: eventMonth, d: eventDay };
+    const hasEnd =
+      eventEndYear != null &&
+      eventEndMonth != null &&
+      eventEndDay != null &&
+      new Date(eventEndYear, eventEndMonth, eventEndDay).getTime() >
+        new Date(eventYear, eventMonth, eventDay).getTime();
+    const ey: PickYmd = hasEnd
+      ? { y: eventEndYear as number, m: eventEndMonth as number, d: eventEndDay as number }
+      : sy;
+    const { lo, hi } = orderPickYmd(sy, ey);
+    setPickRange({ start: lo, end: samePickYmd(lo, hi) ? null : hi });
     setPickDateYear(eventYear);
     setPickDateMonth(eventMonth);
-    setPickDateDay(clampDayToMonth(eventYear, eventMonth, eventDay));
     onModeChange("pickDate");
   };
 
   const reopenPickEndDateFromForm = () => {
-    setDatePickRole("end");
-    setPickDateYear(eventEndYear);
-    setPickDateMonth(eventEndMonth);
-    setPickDateDay(clampDayToMonth(eventEndYear, eventEndMonth, eventEndDay));
+    const sy: PickYmd = { y: eventYear, m: eventMonth, d: eventDay };
+    const hasEnd =
+      eventEndYear != null &&
+      eventEndMonth != null &&
+      eventEndDay != null &&
+      new Date(eventEndYear, eventEndMonth, eventEndDay).getTime() >
+        new Date(eventYear, eventMonth, eventDay).getTime();
+    const ey: PickYmd = hasEnd
+      ? { y: eventEndYear as number, m: eventEndMonth as number, d: eventEndDay as number }
+      : sy;
+    const { lo, hi } = orderPickYmd(sy, ey);
+    setPickRange({ start: lo, end: samePickYmd(lo, hi) ? null : hi });
+    setPickDateYear(hasEnd ? (eventEndYear as number) : eventYear);
+    setPickDateMonth(hasEnd ? (eventEndMonth as number) : eventMonth);
     onModeChange("pickDate");
   };
 
@@ -3477,12 +3636,12 @@ function CalendarScreen({
                   contents={
                     <ListRow.Texts
                       type="2RowTypeA"
-                      top="다가올 항목"
+                      top="다가올 일정"
                       topProps={{ color: adaptive.grey700, fontWeight: "bold" }}
                       bottom={
                         nextEventInMonth
                           ? formatCalendarListRowDetail(nextEventInMonth)
-                          : "이번 달 다가올 항목이 없어요"
+                          : "이번 달 다가올 일정이 없어요"
                       }
                       bottomProps={{ color: adaptive.grey600 }}
                     />
@@ -3501,12 +3660,12 @@ function CalendarScreen({
                   contents={
                     <ListRow.Texts
                       type="2RowTypeA"
-                      top="지난 항목"
+                      top="지난 일정"
                       topProps={{ color: adaptive.grey700, fontWeight: "bold" }}
                       bottom={
                         lastPastEventInMonth
                           ? formatCalendarListRowDetail(lastPastEventInMonth)
-                          : "이번 달 지난 항목이 없어요"
+                          : "이번 달 지난 일정이 없어요"
                       }
                       bottomProps={{ color: adaptive.grey600 }}
                     />
@@ -3542,7 +3701,7 @@ function CalendarScreen({
                   fontWeight="bold"
                   typography="t4"
                 >
-                  {datePickRole === "end" ? "종료일 선택" : "시작일 선택"}
+                  일정 추가하기
                 </ListHeader.TitleParagraph>
               }
               descriptionPosition="bottom"
@@ -3621,22 +3780,40 @@ function CalendarScreen({
                       </div>
                     );
                   }
-                  const isSelected = pickDateDay === cell.day;
+                  const cellYmd: PickYmd = { y: pickDateYear, m: pickDateMonth, d: cell.day };
+                  const ts = pickYmdTs(cellYmd);
+                  const s = pickRange.start != null ? pickYmdTs(pickRange.start) : null;
+                  const e =
+                    pickRange.start != null && pickRange.end != null
+                      ? pickYmdTs(pickRange.end)
+                      : s;
+                  const inRange =
+                    s != null && e != null && ts >= Math.min(s, e) && ts <= Math.max(s, e);
+                  const isStart = pickRange.start != null && samePickYmd(cellYmd, pickRange.start);
+                  const isEnd =
+                    pickRange.start != null &&
+                    pickRange.end != null &&
+                    !samePickYmd(pickRange.start, pickRange.end) &&
+                    samePickYmd(cellYmd, pickRange.end);
+                  const isRangeMiddle = inRange && !isStart && !isEnd;
+                  const isCap = isStart || isEnd;
                   const isToday =
                     today.getFullYear() === pickDateYear &&
                     today.getMonth() === pickDateMonth &&
                     today.getDate() === cell.day;
-                  const labelColor = isSelected
+                  const labelColor = isCap
                     ? adaptive.background
-                    : isToday
-                      ? adaptive.grey700
-                      : adaptive.grey600;
+                    : isRangeMiddle
+                      ? adaptive.grey800
+                      : isToday
+                        ? adaptive.grey700
+                        : adaptive.grey600;
                   return (
                     <button
                       key={cell.key}
                       type="button"
-                      className={`calendar-day-btn${isSelected ? " calendar-day-btn--selected" : ""}${isToday && !isSelected ? " calendar-day-btn--today" : ""}`}
-                      onClick={() => setPickDateDay(cell.day)}
+                      className={`calendar-day-btn${isCap ? " calendar-day-btn--selected" : ""}${isRangeMiddle ? " calendar-day-btn--range-fill" : ""}${isToday && !isCap && !isRangeMiddle ? " calendar-day-btn--today" : ""}`}
+                      onClick={() => onPickDateYmdTap(cellYmd)}
                     >
                       <span className="calendar-day-range-slot" aria-hidden={true} />
                       <span className="calendar-day-inner">
@@ -3658,11 +3835,17 @@ function CalendarScreen({
             </div>
             <Spacing size={24} />
             <Text color={adaptive.grey600} typography="t6" fontWeight="regular" textAlign="center">
-              {pickDateYear}년 {pickDateMonth + 1}월 {pickDateDay}일
-              {datePickRole === "end" ? " · 종료일" : " · 시작일"}
+              {pickRange.start == null
+                ? "달력에서 날짜를 한 번 이상 눌러 주세요."
+                : formatPickDateSelectionLine(pickRange.start, pickRange.end)}
             </Text>
           </div>
-          <BottomCTA.Single onClick={confirmPickDateAndContinue}>다음</BottomCTA.Single>
+          <BottomCTA.Single
+            disabled={!pickDateCanContinue}
+            onClick={confirmPickDateAndContinue}
+          >
+            다음
+          </BottomCTA.Single>
         </section>
       )}
 
@@ -3718,7 +3901,8 @@ function CalendarScreen({
                 {scheduleWizardStep === 0 ? (
                   <>
                     <Text color={adaptive.grey600} typography="t6" fontWeight="regular" display="block">
-                      시작·종료를 눌러 달력에서 고르세요. 하루만이면 종료를 시작과 같게 두면 돼요.
+                      앞에서 고른 날짜가 여기에 반영돼요. 바꾸려면 시작일 또는 종료일을 눌러 달력으로
+                      돌아가 주세요.
                     </Text>
                     <Spacing size={12} />
                     <ListRow
@@ -3770,15 +3954,21 @@ function CalendarScreen({
                   />
                 ) : null}
                 {scheduleWizardStep === 2 ? (
-                  <TextField.Clearable
-                    variant="box"
-                    hasError={false}
-                    label="몇 시에 만나나요?"
-                    labelOption="sustain"
-                    value={eventTime}
-                    placeholder="예) 12:30 (선택)"
-                    onChange={e => setEventTime(e.target.value)}
-                  />
+                  <>
+                    <Text color={adaptive.grey700} typography="t5" fontWeight="bold" display="block">
+                      몇 시에 만나나요?
+                    </Text>
+                    <Spacing size={8} />
+                    <Text color={adaptive.grey600} typography="t6" fontWeight="regular" display="block">
+                      오전·오후, 시, 분을 위아래로 스크롤해서 맞춰 주세요.
+                    </Text>
+                    <Spacing size={16} />
+                    <TimeWheelPicker
+                      hour24={scheduleStep2TimeParts?.hour ?? null}
+                      minute={scheduleStep2TimeParts?.minute ?? null}
+                      onChange={setEventTime}
+                    />
+                  </>
                 ) : null}
                 {scheduleWizardStep === 3 ? (
                   <TextField.Clearable
@@ -3875,8 +4065,7 @@ function CalendarScreen({
                   </Text>
                 ) : spendPickerSlots.length === 0 ? (
                   <Text color={adaptive.grey600} typography="t5" fontWeight="regular">
-                    소비는 해당 날이 지난 뒤에만 남길 수 있어요. 오늘 기준으로 이미 끝난 항목이 없거나, 끝난 항목에는
-                    모두 입력했어요. 아직 날이 안 지난 항목은 그날이 지난 뒤에 다시 확인해 주세요.
+                    일정의 시작 시간이 지나야 소비를 남길 수 있어요!
                   </Text>
                 ) : (
                   <>
@@ -3970,10 +4159,10 @@ function CalendarScreen({
                     <TextField.Clearable
                       variant="box"
                       hasError={false}
-                      label="금액"
+                      label="소비 금액 (1인 기준)"
                       labelOption="sustain"
                       value={spendAmount}
-                      placeholder="금액 입력"
+                      placeholder="내가 낸 금액"
                       suffix="원"
                       format={priceFormat}
                       onChange={e => setSpendAmount(e.target.value)}
@@ -4279,6 +4468,29 @@ function CalendarScreen({
             >
               소비를 줄이세요!
             </Text>
+            <Text
+              display="block"
+              color={adaptive.grey600}
+              typography="t5"
+              fontWeight="regular"
+              textAlign="center"
+            >
+              꿀단지 지수 −{HONEY_JAR_INDEX_DELTA}점 (최저 0점)
+            </Text>
+            {honeyJarIndex <= 0 ? (
+              <>
+                <Spacing size={6} />
+                <Text
+                  display="block"
+                  color={adaptive.grey500}
+                  typography="t7"
+                  fontWeight="regular"
+                  textAlign="center"
+                >
+                  지금은 0점이라 숫자는 그대로일 수 있어요.
+                </Text>
+              </>
+            ) : null}
             {spendFeedbackEvent && spendAlertCap != null ? (
               <>
                 <Spacing size={16} />
@@ -4289,7 +4501,7 @@ function CalendarScreen({
                   fontWeight="regular"
                   textAlign="center"
                 >
-                  {spendFeedbackEvent.title} · 예상 {priceFormat.transform(spendAlertCap)}원보다{" "}
+                  {spendFeedbackEvent.title} · 1인 예상 {priceFormat.transform(spendAlertCap)}원보다 1인{" "}
                   {priceFormat.transform(spendAlertSpent)}원 썼어요
                 </Text>
               </>
@@ -4329,8 +4541,22 @@ function CalendarScreen({
               fontWeight="regular"
               textAlign="center"
             >
-              꿀벌집 + 1
+              꿀단지 지수 +{HONEY_JAR_INDEX_DELTA}점 (최고 100점)
             </Text>
+            {honeyJarIndex >= 100 ? (
+              <>
+                <Spacing size={6} />
+                <Text
+                  display="block"
+                  color={adaptive.grey500}
+                  typography="t7"
+                  fontWeight="regular"
+                  textAlign="center"
+                >
+                  이미 100점이라 숫자는 그대로일 수 있어요.
+                </Text>
+              </>
+            ) : null}
             {spendFeedbackEvent && spendAlertCap != null ? (
               <>
                 <Spacing size={16} />
@@ -4341,7 +4567,7 @@ function CalendarScreen({
                   fontWeight="regular"
                   textAlign="center"
                 >
-                  {spendFeedbackEvent.title} · 예상 {priceFormat.transform(spendAlertCap)}원 안에서{" "}
+                  {spendFeedbackEvent.title} · 1인 예상 {priceFormat.transform(spendAlertCap)}원 안에서 1인{" "}
                   {priceFormat.transform(spendAlertSpent)}원 썼어요
                 </Text>
               </>
@@ -4365,20 +4591,42 @@ function SurveyQuizScreen({
   onComplete: (path: string) => void;
 }) {
   const [path, setPath] = useState("");
+  const [pressedChoice, setPressedChoice] = useState<"A" | "B" | null>(null);
+  const chooseTimerRef = useRef<number | null>(null);
   const qIndex = path.length;
   const node = SURVEY_QUESTIONS[qIndex];
   const progressLabel = `${qIndex + 1} / ${SURVEY_QUESTION_COUNT}`;
 
+  useEffect(() => {
+    return () => {
+      if (chooseTimerRef.current != null) {
+        window.clearTimeout(chooseTimerRef.current);
+        chooseTimerRef.current = null;
+      }
+    };
+  }, []);
+
   const choose = (bit: "A" | "B") => {
-    const next = path + bit;
-    if (next.length >= SURVEY_QUESTION_COUNT) {
-      onComplete(next);
+    if (pressedChoice != null) {
       return;
     }
-    setPath(next);
+    setPressedChoice(bit);
+    chooseTimerRef.current = window.setTimeout(() => {
+      chooseTimerRef.current = null;
+      setPressedChoice(null);
+      const next = path + bit;
+      if (next.length >= SURVEY_QUESTION_COUNT) {
+        onComplete(next);
+        return;
+      }
+      setPath(next);
+    }, 160);
   };
 
   const handleBack = () => {
+    if (pressedChoice != null) {
+      return;
+    }
     if (path.length > 0) {
       setPath(p => p.slice(0, -1));
       return;
@@ -4403,13 +4651,33 @@ function SurveyQuizScreen({
       </div>
       <Spacing size={28} />
       <div className="survey-quiz-options" role="list">
-        <button type="button" className="survey-quiz-option" onClick={() => choose("A")}>
-          <Text color={adaptive.grey800} typography="t6" fontWeight="medium">
+        <button
+          type="button"
+          className={`survey-quiz-option${pressedChoice === "A" ? " survey-quiz-option--pressed" : ""}`}
+          disabled={pressedChoice != null}
+          aria-pressed={pressedChoice === "A"}
+          onClick={() => choose("A")}
+        >
+          <Text
+            color={pressedChoice === "A" ? adaptive.grey900 : adaptive.grey800}
+            typography="t6"
+            fontWeight="medium"
+          >
             {node.optionA}
           </Text>
         </button>
-        <button type="button" className="survey-quiz-option" onClick={() => choose("B")}>
-          <Text color={adaptive.grey800} typography="t6" fontWeight="medium">
+        <button
+          type="button"
+          className={`survey-quiz-option${pressedChoice === "B" ? " survey-quiz-option--pressed" : ""}`}
+          disabled={pressedChoice != null}
+          aria-pressed={pressedChoice === "B"}
+          onClick={() => choose("B")}
+        >
+          <Text
+            color={pressedChoice === "B" ? adaptive.grey900 : adaptive.grey800}
+            typography="t6"
+            fontWeight="medium"
+          >
             {node.optionB}
           </Text>
         </button>

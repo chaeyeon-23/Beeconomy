@@ -20,10 +20,118 @@ export type SpendEstimateInput = {
 
 const PLANNED_CATEGORY_JOIN_SEP = "\u001e";
 
-/** 제목 + 예상 카테고리 — 휴리스틱·보정에서 공통으로 사용 */
-function spendEstimateHaystack(input: SpendEstimateInput): string {
+/** App `SPEND_CATEGORIES`와 동일 라벨 — 마법사에서만 옴 */
+const PLANNED_CAT_MEAL = "식비";
+const PLANNED_CAT_CAFE_SNACK = "카페·간식";
+
+function plannedSpendCategoryList(input: SpendEstimateInput): string[] {
+  const raw = input.plannedSpendCategoriesJoined ?? "";
+  if (!raw.trim()) {
+    return [];
+  }
+  return raw
+    .split(PLANNED_CATEGORY_JOIN_SEP)
+    .map(s => s.trim())
+    .filter(Boolean);
+}
+
+/**
+ * 「식비」를 고르지 않고 「카페·간식」을 고른 경우 —
+ * 제목에 회식만 적혀 있어도 커피·디저트 위주로 본다.
+ */
+export function isCafeOnlyPlannedSpend(input: SpendEstimateInput): boolean {
+  const cats = plannedSpendCategoryList(input);
+  if (cats.length === 0) {
+    return false;
+  }
+  if (cats.includes(PLANNED_CAT_MEAL)) {
+    return false;
+  }
+  return cats.includes(PLANNED_CAT_CAFE_SNACK);
+}
+
+/** 제목 + 예상 카테고리 — 휴리스틱·보정·AI 입력에서 공통으로 사용 */
+export function spendEstimateHaystack(input: SpendEstimateInput): string {
   const plan = (input.plannedSpendCategoriesJoined ?? "").split(PLANNED_CATEGORY_JOIN_SEP).join(" ");
   return `${input.title} ${plan}`.replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Premium Escalator: 고단가·충동구매 맥락 → 보수적으로 상향 (주류 추가·덧메뉴·임시 지출 예비).
+ * 서버 프롬프트와 동일 키워드 세트를 유지할 것.
+ */
+export function premiumEscalatorKeywordsActive(haystack: string): boolean {
+  return /오마카세|백화점|파인다이닝|미슐랭|캐비어|스테이크\s*하우스|코스요리|룸\s*식사|고급\s*레스토랑|면세점|명품|편집샵|프라이빗|기념일\s*코스|파티\s*룸|하이엔드/i.test(
+    haystack,
+  );
+}
+
+/** 제주·핫플 등 대략적 물가 가중 (1인 기준 베이스에 곱함) */
+function regionalCostMultiplier(haystack: string): number {
+  if (/제주/i.test(haystack)) {
+    return 1.1;
+  }
+  if (/강남|청담|압구정|신사|한남|이태원|성수|연남/i.test(haystack)) {
+    return 1.08;
+  }
+  if (/명동|홍대|건대입구|신촌|해운대|광안리|경주|강릉|속초/i.test(haystack)) {
+    return 1.05;
+  }
+  return 1;
+}
+
+/**
+ * 귀추적 추론(경량): 사용자가 안 써도 흔한 부가비용. 1인당 가산(원).
+ */
+function hiddenCostBufferHeuristic(haystack: string, input: SpendEstimateInput, tripDays: number): number {
+  let add = 0;
+  if (/비행|항공|공항|LCC|저가항공|티웨이|제주항공|진에어|에어부산/i.test(haystack)) {
+    add += 12_000;
+  }
+  if (/대리|대리운전/i.test(haystack)) {
+    add += 22_000;
+  } else if (/술|회식|이자카야|포차|술자리|2차|폭탄주/i.test(haystack)) {
+    const hour = parseHourFromTimeLabel(input.timeLabel);
+    const late = hour != null && (hour >= 21 || hour < 5);
+    add += late ? 16_000 : 9_000;
+  }
+  if (/주차|발렛|공영주차/i.test(haystack)) {
+    add += 8_000;
+  }
+  if (/택시|카카오\s*T/i.test(haystack)) {
+    add += 7_000;
+  }
+  if (tripDays > 1) {
+    add += 5_000 * Math.min(tripDays, 7);
+  }
+  if (/골프|스크린골프/i.test(haystack)) {
+    add += 15_000;
+  }
+  return add;
+}
+
+export type SystematicSpendLayerOpts = {
+  /** 카페·간식만 계획: 지역 물가만 적용(술·회식 숨은비·프리미엄 제외) */
+  cafeLight?: boolean;
+};
+
+/** 베이스(카테고리 휴리스틱) → 지역 가중 → 프리미엄 에스컬레이터 → 숨은 비용 */
+export function applySystematicSpendLayers(
+  basePerPerson: number,
+  input: SpendEstimateInput,
+  opts?: SystematicSpendLayerOpts,
+): number {
+  const hay = spendEstimateHaystack(input);
+  const tripDays = inclusiveTripDayCount(input.eventDateIso, input.eventEndDateIso ?? null);
+  let x = basePerPerson * regionalCostMultiplier(hay);
+  if (opts?.cafeLight) {
+    return x;
+  }
+  if (premiumEscalatorKeywordsActive(hay)) {
+    x *= 1.22;
+  }
+  x += hiddenCostBufferHeuristic(hay, input, tripDays);
+  return x;
 }
 
 /** 시작·종료(포함) 사이 달력 일 수. 잘못된 값·역순이면 1 */
@@ -107,13 +215,14 @@ export function estimateSpendHeuristic(input: SpendEstimateInput): number {
   if (tripDays > 1) {
     const dailyBase = tripWord ? 34000 : 26000;
     let perPerson = dailyBase * Math.pow(tripDays, 0.88);
+    perPerson = applySystematicSpendLayers(perPerson, input);
     perPerson = roundToNearest1000(perPerson);
     perPerson = applyMonthlyBudgetCapPerPerson(perPerson, people, input.monthlyBudgetWon);
     const floor = tripDays >= 10 ? 150_000 : tripDays >= 7 ? 120_000 : tripDays >= 4 ? 70_000 : 35_000;
     return Math.max(floor, Math.min(550_000, perPerson));
   }
   if (tripDays === 1 && tripWord) {
-    let perPerson = 40000;
+    let perPerson = applySystematicSpendLayers(40000, input);
     perPerson = applyMonthlyBudgetCapPerPerson(perPerson, people, input.monthlyBudgetWon);
     return Math.max(18_000, roundToNearest1000(perPerson));
   }
@@ -125,24 +234,26 @@ export function estimateSpendHeuristic(input: SpendEstimateInput): number {
     } else if (/치과/i.test(hay)) {
       perPerson = 25000;
     }
+    perPerson = applySystematicSpendLayers(perPerson, input);
     perPerson = applyMonthlyBudgetCapPerPerson(perPerson, people, input.monthlyBudgetWon);
     return Math.max(5000, roundToNearest1000(perPerson));
   }
 
   if (/브런치/i.test(hay)) {
-    let perPerson = 15000;
+    let perPerson = applySystematicSpendLayers(15000, input);
     perPerson = applyMonthlyBudgetCapPerPerson(perPerson, people, input.monthlyBudgetWon);
     return Math.max(5000, roundToNearest1000(perPerson));
   }
 
   if (/구독|\bOTT\b|넷플릭스|netflix|디즈니|disney|쿠팡플레이|wavve|웨이브/i.test(hay)) {
-    let perPerson = 14000;
+    let perPerson = applySystematicSpendLayers(14000, input);
     perPerson = applyMonthlyBudgetCapPerPerson(perPerson, people, input.monthlyBudgetWon);
     return Math.max(5000, roundToNearest1000(perPerson));
   }
 
   const hour = parseHourFromTimeLabel(input.timeLabel);
   const titleT = input.title.trim();
+  const cafeOnlyPlanned = isCafeOnlyPlannedSpend(input);
   /** 제목이 커피·디저트 위주일 때만 저녁 시간대에도 낮은 추정(카페·간식 카테고리 오분류 방지) */
   const coffeeOnlyHint =
     /카페\s*에서|스타벅스|투썸|이디야|메가커피|빽다방|커피\s*만|티타임|디저트\s*만|케이크\s*만/i.test(
@@ -159,13 +270,14 @@ export function estimateSpendHeuristic(input: SpendEstimateInput): number {
   /** 15~16시: 늦은 점심·카페·가벼운 모임 묶음(3시 모임 등) */
   const isAfternoon = hour != null && hour >= 15 && hour < 17;
 
+  const skipHeavyMealForCafePlan = coffeeOnlyHint || cafeOnlyPlanned;
   const useDinnerMeal =
-    !coffeeOnlyHint && (isDinnerHour || (hour == null && eveningMealHint));
+    !skipHeavyMealForCafePlan && (isDinnerHour || (hour == null && eveningMealHint));
   const useLunchMeal =
-    !coffeeOnlyHint && !useDinnerMeal && (isLunchHour || (hour == null && lunchMealHint));
+    !skipHeavyMealForCafePlan && !useDinnerMeal && (isLunchHour || (hour == null && lunchMealHint));
 
   if (useDinnerMeal) {
-    let perPerson = 38_000;
+    let perPerson = 20_000;
     if (/영화|movie|cinema|극장/i.test(hay)) {
       perPerson += 15_000;
     }
@@ -173,37 +285,41 @@ export function estimateSpendHeuristic(input: SpendEstimateInput): number {
       perPerson += Math.round(15_000 / people);
     }
     if (/회식|고깃|삼겹|무한|뷔페|오마카세|파인다이닝|코스/i.test(hay)) {
-      perPerson += 12_000;
+      perPerson += 10_000;
     }
+    perPerson = applySystematicSpendLayers(perPerson, input);
     perPerson = applyMonthlyBudgetCapPerPerson(perPerson, people, input.monthlyBudgetWon);
-    return Math.max(25_000, roundToNearest1000(perPerson));
+    return Math.max(18_000, roundToNearest1000(perPerson));
   }
 
   if (useLunchMeal) {
-    let perPerson = 28_000;
+    let perPerson = 22_000;
     if (/영화|movie|cinema|극장/i.test(hay)) {
       perPerson += 15_000;
     }
     if (/생일|케이크|파티/i.test(hay)) {
       perPerson += Math.round(12_000 / people);
     }
+    perPerson = applySystematicSpendLayers(perPerson, input);
     perPerson = applyMonthlyBudgetCapPerPerson(perPerson, people, input.monthlyBudgetWon);
-    return Math.max(18_000, roundToNearest1000(perPerson));
+    return Math.max(15_000, roundToNearest1000(perPerson));
   }
 
-  if (/커피|카페|간식/i.test(hay)) {
-    let perPerson = 8000;
+  if (/커피|카페|간식/i.test(hay) || cafeOnlyPlanned || coffeeOnlyHint) {
+    let perPerson = applySystematicSpendLayers(8000, input, {
+      cafeLight: cafeOnlyPlanned || coffeeOnlyHint,
+    });
     perPerson = applyMonthlyBudgetCapPerPerson(perPerson, people, input.monthlyBudgetWon);
     return Math.max(5000, roundToNearest1000(perPerson));
   }
 
-  let perPerson = 18_000;
+  let perPerson = 15_000;
   if (isDinnerHour) {
-    perPerson = 38_000;
+    perPerson = 20_000;
   } else if (isLunchHour) {
-    perPerson = 28_000;
+    perPerson = 22_000;
   } else if (isAfternoon) {
-    perPerson = 16_000;
+    perPerson = 14_000;
   }
 
   if (/영화|movie|cinema|극장/i.test(hay)) {
@@ -213,6 +329,7 @@ export function estimateSpendHeuristic(input: SpendEstimateInput): number {
     perPerson += Math.round(12000 / people);
   }
 
+  perPerson = applySystematicSpendLayers(perPerson, input);
   perPerson = applyMonthlyBudgetCapPerPerson(perPerson, people, input.monthlyBudgetWon);
 
   return Math.max(8000, roundToNearest1000(perPerson));
@@ -237,7 +354,7 @@ export function reconcilePerPersonWonAfterApi(
   if (people >= 2) {
     const asSplit = Math.round(x / people);
     const splitLo = Math.max(2_500, Math.floor(h * 0.3));
-    const splitHi = Math.min(150_000, Math.max(35_000, h * 5 + 20_000));
+    const splitHi = Math.min(150_000, Math.max(28_000, h * 5 + 20_000));
     if (asSplit >= splitLo && asSplit <= splitHi) {
       const impliedGroup = h * people;
       const looksLikeStuffedGroupTotal =

@@ -9,10 +9,10 @@ npm install
 npm run dev
 ```
 
-`npm run dev` 는 **API 서버(3001)** 와 **Granite+Vite(8081/5173)** 를 같이 띄웁니다. 웹만 켜려면 `npm run dev:web`, API만 켜려면 `npm run dev:api` 입니다.
+`npm run dev` 는 **API 서버(3001)** 와 **Granite+Vite(8081/5183)** 를 같이 띄웁니다. 웹만 켜려면 `npm run dev:web`, API만 켜려면 `npm run dev:api` 입니다.
 
-- 브라우저: [http://localhost:5173/](http://localhost:5173/)
-- 옆에 폰 프레임 데모: [http://localhost:5173/simulator-demo.html](http://localhost:5173/simulator-demo.html) (`npm run dev` 실행 중일 때)
+- 브라우저: [http://localhost:5183/](http://localhost:5183/) (다른 프로젝트가 5173을 쓰는 경우를 피하려고 비코노미는 5183)
+- 옆에 폰 프레임 데모: [http://localhost:5183/simulator-demo.html](http://localhost:5183/simulator-demo.html) (`npm run dev` 실행 중일 때)
 - Granite 개발 서버: **8081** (앱인토스 샌드박스가 여기로 붙는 경우가 많음)
 - **백엔드(API)**: [http://127.0.0.1:3001/health](http://127.0.0.1:3001/health) · `POST /api/spend-estimate` (일정 → 1인당 예상 원, 개발 시 프론트가 기본으로 호출)
 
