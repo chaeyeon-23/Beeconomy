@@ -27,7 +27,32 @@ import { resolveSpendEstimate } from "./spendEstimate";
 import { TimeWheelPicker } from "./TimeWheelPicker";
 /** 가입 전 웰컴 화면(「일침이와 함께…」) 전용 — 가입 후 메인 홈은 이모지 유지 */
 import welcomeIllimiPng from "./assets/일침이.png";
+import landlordPng from "./assets/건물주.png";
+import routeDeviationPng from "./assets/경로이탈.png";
+import steakPng from "./assets/스테이크.png";
 import "./App.css";
+
+const PRAISE_ALERT_HERO_KEY = "bikonomy_praise_alert_hero_idx";
+const PRAISE_ALERT_HEROES = [landlordPng, steakPng] as const;
+
+function readPraiseAlertHeroIndex(): 0 | 1 {
+  try {
+    return localStorage.getItem(PRAISE_ALERT_HERO_KEY) === "1" ? 1 : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** 칭찬 알림이 뜰 때마다 건물주 ↔ 스테이크 번갈아 표시 */
+function advancePraiseAlertHeroIndex(): 0 | 1 {
+  const next: 0 | 1 = readPraiseAlertHeroIndex() === 0 ? 1 : 0;
+  try {
+    localStorage.setItem(PRAISE_ALERT_HERO_KEY, String(next));
+  } catch {
+    // ignore
+  }
+  return next;
+}
 
 const NICKNAME_STORAGE_KEY = "bikonomy_nickname";
 const HIVE_INVITE_STORAGE_KEY = "bikonomy_hive_invite_id";
@@ -408,7 +433,6 @@ function newSpendEntryId(): string {
   }
 }
 
-const SIREN_LOTTIE_SRC = "https://static.toss.im/lotties-common/siren-2-spot.json";
 
 /**
  * 칭찬·경보·초과 알림에 쓰는 예산 상한 — **항상 1인 기준**.
@@ -1611,9 +1635,30 @@ function App() {
     }
   }, [screen, calendarMode, calendarAddEventViaPickDate, dismissSpendFeedbackAlert]);
 
+  const headerClose = useCallback(() => {
+    if (screen === "calendar") {
+      setOpenSpendEntryFromHome(false);
+      setSpendAlertEventId(null);
+      setCalendarAddEventViaPickDate(false);
+      setCalendarMode("calendar");
+      setScreen("home");
+      return;
+    }
+    if (screen === "honeyChallenge") {
+      setScreen("home");
+      return;
+    }
+    if (screen !== "welcome" && screen !== "home") {
+      setScreen("home");
+    }
+  }, [screen]);
+
   return (
     <main className="app-shell">
-      <AppHeader onBack={screen === "welcome" ? undefined : headerBack} />
+      <AppHeader
+        onBack={screen === "welcome" ? undefined : headerBack}
+        onClose={screen === "welcome" ? undefined : headerClose}
+      />
 
       {screen === "welcome" && (
         <WelcomeScreen
@@ -1756,7 +1801,7 @@ function App() {
   );
 }
 
-function AppHeader({ onBack }: { onBack?: () => void }) {
+function AppHeader({ onBack, onClose }: { onBack?: () => void; onClose?: () => void }) {
   return (
     <header className="app-header">
       {onBack ? (
@@ -1815,7 +1860,13 @@ function AppHeader({ onBack }: { onBack?: () => void }) {
             />
           </button>
           <span className="header-divider" />
-          <button className="pill-icon-button" type="button" aria-label="닫기">
+          <button
+            className="pill-icon-button"
+            type="button"
+            aria-label="닫기"
+            onClick={() => onClose?.()}
+            disabled={onClose == null}
+          >
             <Asset.Icon
               frameShape={Asset.frameShape.CleanW20}
               backgroundColor="transparent"
@@ -2680,6 +2731,25 @@ function CalendarScreen({
   /** 일정 수정 중이면 해당 id (신규 추가면 null) */
   const [editingCalendarEventId, setEditingCalendarEventId] = useState<string | null>(null);
   const spendPrefillTokenRef = useRef<string | null>(null);
+  const prevCalendarModeRef = useRef<CalendarFlowMode>(mode);
+  const [praiseHeroTick, setPraiseHeroTick] = useState(0);
+
+  useLayoutEffect(() => {
+    const prev = prevCalendarModeRef.current;
+    prevCalendarModeRef.current = mode;
+    if (mode === "spendPraiseAlert" && prev !== "spendPraiseAlert") {
+      advancePraiseAlertHeroIndex();
+      setPraiseHeroTick(t => t + 1);
+    }
+  }, [mode]);
+
+  const praiseHeroSrc = useMemo(() => {
+    if (mode !== "spendPraiseAlert") {
+      return PRAISE_ALERT_HEROES[0];
+    }
+    void praiseHeroTick;
+    return PRAISE_ALERT_HEROES[readPraiseAlertHeroIndex()];
+  }, [mode, praiseHeroTick]);
 
   const [pickDateYear, setPickDateYear] = useState(() => today.getFullYear());
   const [pickDateMonth, setPickDateMonth] = useState(() => today.getMonth());
@@ -4436,19 +4506,17 @@ function CalendarScreen({
       {mode === "spendOverAlert" && (
         <section className="screen spend-alert-screen">
           <div className="spend-alert-inner">
-            <Spacing size={160} />
             <div className="spend-alert-lottie">
-              <Asset.Lottie
-                frameShape={Asset.frameShape.CleanW100}
-                backgroundColor="transparent"
-                src={SIREN_LOTTIE_SRC}
-                loop={true}
-                speed={1}
-                aria-hidden={true}
-                style={{ aspectRatio: "1/1" }}
-              />
+              <div className="spend-alert-hero-stage spend-alert-hero-stage--alarm">
+                <img
+                  className="spend-alert__hero-img spend-alert__hero-img--alarm"
+                  src={routeDeviationPng}
+                  alt=""
+                  decoding="async"
+                />
+              </div>
             </div>
-            <Spacing size={24} />
+            <Spacing size={4} />
             <Text
               display="block"
               color={adaptive.grey800}
@@ -4456,53 +4524,20 @@ function CalendarScreen({
               fontWeight="bold"
               textAlign="center"
             >
-              일침 경보 🐝
+              경보 🚨
             </Text>
-            <Spacing size={8} />
-            <Text
-              display="block"
-              color={adaptive.grey700}
-              typography="t1"
-              fontWeight="bold"
-              textAlign="center"
-            >
-              소비를 줄이세요!
-            </Text>
-            <Text
-              display="block"
-              color={adaptive.grey600}
-              typography="t5"
-              fontWeight="regular"
-              textAlign="center"
-            >
-              꿀단지 지수 −{HONEY_JAR_INDEX_DELTA}점 (최저 0점)
-            </Text>
-            {honeyJarIndex <= 0 ? (
-              <>
-                <Spacing size={6} />
-                <Text
-                  display="block"
-                  color={adaptive.grey500}
-                  typography="t7"
-                  fontWeight="regular"
-                  textAlign="center"
-                >
-                  지금은 0점이라 숫자는 그대로일 수 있어요.
-                </Text>
-              </>
-            ) : null}
             {spendFeedbackEvent && spendAlertCap != null ? (
               <>
-                <Spacing size={16} />
+                <Spacing size={8} />
                 <Text
                   display="block"
-                  color={adaptive.grey600}
-                  typography="t6"
-                  fontWeight="regular"
+                  color={adaptive.grey900}
+                  typography="t2"
+                  fontWeight="bold"
                   textAlign="center"
                 >
-                  {spendFeedbackEvent.title} · 1인 예상 {priceFormat.transform(spendAlertCap)}원보다 1인{" "}
-                  {priceFormat.transform(spendAlertSpent)}원 썼어요
+                  {spendFeedbackEvent.title} · 예상 금액 {priceFormat.transform(spendAlertCap)}원 중에서{" "}
+                  {priceFormat.transform(spendAlertSpent)}원 썼어요!
                 </Text>
               </>
             ) : null}
@@ -4516,59 +4551,28 @@ function CalendarScreen({
       {mode === "spendPraiseAlert" && (
         <section className="screen spend-alert-screen">
           <div className="spend-alert-inner">
-            <Spacing size={160} />
-            <Asset.Icon
-              frameShape={Asset.frameShape.CleanW100}
-              backgroundColor="transparent"
-              name="icon-u1F44F_u1F3FB"
-              aria-hidden={true}
-              ratio="1/1"
-            />
-            <Spacing size={24} />
-            <Text
-              display="block"
-              color={adaptive.grey800}
-              typography="t2"
-              fontWeight="bold"
-              textAlign="center"
-            >
-              이대로라면 건물주 확정이에요!
-            </Text>
-            <Text
-              display="block"
-              color={adaptive.grey700}
-              typography="t5"
-              fontWeight="regular"
-              textAlign="center"
-            >
-              꿀단지 지수 +{HONEY_JAR_INDEX_DELTA}점 (최고 100점)
-            </Text>
-            {honeyJarIndex >= 100 ? (
-              <>
-                <Spacing size={6} />
-                <Text
-                  display="block"
-                  color={adaptive.grey500}
-                  typography="t7"
-                  fontWeight="regular"
-                  textAlign="center"
-                >
-                  이미 100점이라 숫자는 그대로일 수 있어요.
-                </Text>
-              </>
-            ) : null}
+            <div className="spend-alert-lottie">
+              <div className="spend-alert-hero-stage spend-alert-hero-stage--praise">
+                <img
+                  className="spend-alert__hero-img spend-alert__hero-img--praise"
+                  src={praiseHeroSrc}
+                  alt=""
+                  decoding="async"
+                />
+              </div>
+            </div>
             {spendFeedbackEvent && spendAlertCap != null ? (
               <>
-                <Spacing size={16} />
+                <Spacing size={4} />
                 <Text
                   display="block"
-                  color={adaptive.grey600}
-                  typography="t6"
-                  fontWeight="regular"
+                  color={adaptive.grey900}
+                  typography="t2"
+                  fontWeight="bold"
                   textAlign="center"
                 >
-                  {spendFeedbackEvent.title} · 1인 예상 {priceFormat.transform(spendAlertCap)}원 안에서 1인{" "}
-                  {priceFormat.transform(spendAlertSpent)}원 썼어요
+                  {spendFeedbackEvent.title} · 예상 금액 {priceFormat.transform(spendAlertCap)}원 중에서{" "}
+                  {priceFormat.transform(spendAlertSpent)}원 썼어요!
                 </Text>
               </>
             ) : null}

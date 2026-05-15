@@ -592,18 +592,151 @@ button {
   width: 100%;
   max-width: 400px;
   margin: 0 auto;
-  padding: 0 24px 24px;
+  padding: 0 24px 16px;
   box-sizing: border-box;
   flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
 }
 
 .spend-alert-lottie {
   display: flex;
   justify-content: center;
   width: 100%;
+}
+
+.spend-alert-hero-stage {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  perspective: 720px;
+  transform-style: preserve-3d;
+}
+
+/* 경보: 붉은 링 펄스 + 살짝 흔들림 */
+.spend-alert-hero-stage--alarm::before {
+  content: "";
+  position: absolute;
+  inset: -8% -6%;
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(255, 72, 72, 0.28) 0%,
+    rgba(255, 72, 72, 0.08) 45%,
+    transparent 70%
+  );
+  animation: spend-alert-alarm-glow 1.4s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.spend-alert-hero-stage--praise::before {
+  content: "";
+  position: absolute;
+  inset: -6% -4%;
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(255, 196, 72, 0.22) 0%,
+    rgba(255, 196, 72, 0.06) 50%,
+    transparent 72%
+  );
+  animation: spend-alert-praise-glow 2.6s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.spend-alert__hero-img {
+  position: relative;
+  z-index: 1;
+  width: min(380px, 94vw);
+  max-height: min(380px, 58vh);
+  height: auto;
+  object-fit: contain;
+  display: block;
+  transform-style: preserve-3d;
+  will-change: transform, filter;
+}
+
+.spend-alert__hero-img--alarm {
+  animation: spend-alert-alarm-motion 0.72s ease-in-out infinite;
+  filter: drop-shadow(0 10px 20px rgba(220, 48, 48, 0.28))
+    drop-shadow(0 4px 10px rgba(0, 0, 0, 0.14));
+}
+
+.spend-alert__hero-img--praise {
+  animation: spend-alert-praise-motion 2.8s ease-in-out infinite;
+  filter: drop-shadow(0 12px 24px rgba(255, 168, 48, 0.22))
+    drop-shadow(0 5px 12px rgba(0, 0, 0, 0.12));
+}
+
+@keyframes spend-alert-alarm-glow {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(0.96);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+}
+
+@keyframes spend-alert-alarm-motion {
+  0%,
+  100% {
+    transform: rotate(-2.5deg) rotateY(-4deg) translateY(0) scale(1);
+  }
+  20% {
+    transform: rotate(2.5deg) rotateY(4deg) translateY(-3px) scale(1.02);
+  }
+  40% {
+    transform: rotate(-1.5deg) rotateY(-2deg) translateY(0) scale(1);
+  }
+  60% {
+    transform: rotate(2deg) rotateY(3deg) translateY(-5px) scale(1.03);
+  }
+  80% {
+    transform: rotate(-2deg) rotateY(-3deg) translateY(-1px) scale(1.01);
+  }
+}
+
+@keyframes spend-alert-praise-glow {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: scale(0.98);
+  }
+  50% {
+    opacity: 0.95;
+    transform: scale(1.04);
+  }
+}
+
+@keyframes spend-alert-praise-motion {
+  0%,
+  100% {
+    transform: rotateY(-3deg) translateY(0) scale(1);
+  }
+  50% {
+    transform: rotateY(3deg) translateY(-10px) scale(1.04);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spend-alert-hero-stage--alarm::before,
+  .spend-alert-hero-stage--praise::before {
+    animation: none;
+    opacity: 0.7;
+  }
+
+  .spend-alert__hero-img--alarm,
+  .spend-alert__hero-img--praise {
+    animation: none;
+  }
 }
 
 .calendar-add-event-screen {
